@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>My 4k streaming experiment</title>
+
+    <script src="../../dist/dash.all.debug.js"></script>
+    <!--dash.all.min.js should be used in production over dash.all.debug.js
+        Debug files are not compressed or obfuscated making the file size much larger compared with dash.all.min.js-->
+    <!--<script src="../../dist/dash.all.min.js"></script>-->
+    
+    <script>
+	var player;
+        var cnt = 1;
+        function init() {
+            var video,
+	    	url = "./TearsofSteel4k_CBR_45/sample.mpd"; 
+
+            video = document.querySelector("video");
+            player = dashjs.MediaPlayer().create();
+            player.initialize(video, url, true);
+
+	        applySettings()
+
+            player.on(dashjs.MediaPlayer.events["PLAYBACK_ENDED"], function () {
+                clearInterval(eventPoller);
+                clearInterval(bitrateCalculator);
+            });  
+            
+            var data = [];
+	         localStorage.clear();
+                /* １秒ごとにビットレート、スループット、バッファ容量を更新　*/   
+		    var eventPoller = setInterval(function (){
+                var streamInfo = player.getActiveStream().getStreamInfo();
+                var dashMetrics = player.getDashMetrics();
+                var dashAdapter = player.getDashAdapter();
+
+		        if (dashMetrics && streamInfo) {
+                    const periodIdx = streamInfo.index;
+		            //var throughput = player.getAverageThroughput('video');
+                    var throughput = localStorage.getItem("throughput");
+                    data.push(throughput/1000);
+                    var repSwitch = dashMetrics.getCurrentRepresentationSwitch('video', true);
+                    var bufferLevel = dashMetrics.getCurrentBufferLevel('video', true);
+		            data.push(bufferLevel);
+                    var bitrate = repSwitch ? Math.round(dashAdapter.getBandwidthForRepresentation(repSwitch.to, periodIdx) / 1000) : NaN;
+		            localStorage.setItem(cnt, JSON.stringify(data));
+		            cnt = cnt+1;
+		            data = [];
+		            if (bufferLevel < 1.5 && cnty > 58) {
+		                BufferThroughputDownload();
+                        const reducer = (accumulator, curr) => accumulator + curr;
+                        console.log("======== QoE_lin ========");
+                        console.log("======== each_reward ========");
+                        console.log(each_reward);
+                        console.log(each_reward.reduce(reducer));
+                        console.log("======== bitrate_utility========");
+                        console.log(bitrate_utility);
+                        console.log(bitrate_utility.reduce(reducer));
+                        console.log("======== smooth_penalty ========");
+                        console.log(smooth_penalty);
+                        console.log(smooth_penalty.reduce(reducer));
+                        console.log("======== QoE_log ========");
+                        console.log("======== each_reward_log ========");
+                        console.log(each_reward_log);
+                        console.log(each_reward_log.reduce(reducer));
+                        console.log("======== bitrate_utility========");
+                        console.log(bitrate_utility_log);
+                        console.log(bitrate_utility_log.reduce(reducer));
+                        console.log("======== smooth_penalty ========");
+                        console.log(smooth_penalty_log);
+                        console.log(smooth_penalty_log.reduce(reducer));
+		            }
+                    var adaptation = dashAdapter.getAdaptationForType(periodIdx, 'video', streamInfo)
+		            var frameRate = adaptation.Representation_asArray.find(function (rep) {
+                        return rep.id === repSwitch.to
+                    }).frameRate;
+                    document.getElementById('bufferLevel').innerText = bufferLevel;
+                    document.getElementById('framerate').innerText = frameRate + " fps";
+                    document.getElementById('reportedBitrate').innerText = bitrate + " Kbps";
+                    }
+                }, 1000);	
+
+	        /*  10msごとにバッファ容量を取得 */			
+	        var eventPoller_buffer = setInterval(function (){
+                var streamInfo = player.getActiveStream().getStreamInfo();
+                var dashMetrics = player.getDashMetrics();
+                var dashAdapter = player.getDashAdapter();
+
+                if (dashMetrics && streamInfo) {
+                    bufferLevel_Qlearning = dashMetrics.getCurrentBufferLevel('video', true);
+                    localStorage.setItem("bufferLevel_Qlearning", bufferLevel_Qlearning);
+                    }
+                }, 10);
+
+            if (video.webkitVideoDecodedByteCount !== undefined) {
+                var lastDecodedByteCount = 0;
+                const bitrateInterval = 1;
+                var bitrateCalculator = setInterval(function () {
+                var calculatedBitrate = (((video.webkitVideoDecodedByteCount - lastDecodedByteCount) / 4000) * 8) / bitrateInterval;
+	            calculatedBitrate_2 = calculatedBitrate;
+                document.getElementById('calculatedBitrate').innerText = Math.round(calculatedBitrate) + " Kbps";
+                lastDecodedByteCount = video.webkitVideoDecodedByteCount;
+                }, bitrateInterval * 4000);
+            } else {
+                document.getElementById('chrome-only').style.display = "none";
+            }
+        }
+    </script>
+    <!--"abrBola" "abrThroughput" "abrDynamic" -->
+    <script src="Qlearning_BitrateRule.js" class="code"></script> 
+    <script class="code">
+        function applySettings() {
+            player.updateSettings({
+                'streaming': {
+		        'stableBufferTime': 27.5,
+      		        'abr': { 
+                        'useDefaultABRRules': false,
+			            /* 'ABRStrategy' : 'abrBola ', */
+			                    }
+                    }
+            });
+	    /* add my custom quality switch rule. Look at LowestBitrateRule.js to know more */
+        /* about the structure of a custom rule */
+         player.addABRCustomRule('qualitySwitchRules', 'Qlearning_BitrateRule', Qlearning_BitrateRule); 
+	 }
+    </script>
+
+    <style>
+        video {
+            width: 960px;
+            height: 540px;
+        }
+
+        #container {
+            display: inline-block;
+        }
+
+        #container > div {
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+    </style>
+</head>
+<body>
+<div id="container">
+    <div class="video-container">
+        <video data-dashjs-player autoplay controls="true">
+        </video>
+    </div>
+    <div>
+        <strong>Reported bitrate:</strong>
+        <span id="reportedBitrate"></span>
+        <br/>
+        <strong>Buffer level:</strong>
+        <span id="bufferLevel"></span>
+        <div id="chrome-only">
+            <strong>Calculated bitrate:</strong>
+            <span id="calculatedBitrate"></span>
+        </div>
+        <strong>Framerate:</strong>
+        <span id = "framerate"></span>
+        <br/>
+	<a id="download" href="#" download = "test.csv" onclick="BufferThroughputDownload()">スループット・バッファlog</a>
+	<br/>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        init();
+    });
+</script>
+
+<script type='text/javascript'>
+function BufferThroughputDownload() {
+        var log = [];
+        var bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+	    for(var count =1; count < cnt; count++){
+		var data = JSON.parse((localStorage.getItem(count)) );
+		log.push(data);
+		data = [];
+		}
+        console.log(RepresentationDownload());
+        var content = log;
+	    let csv_string  = ""; 
+        var last_csv  = [0,0]
+        for (let d of content) {
+                if (array_equal(d, last_csv)){
+                  csv_string += d.join(",");
+                  csv_string += '\r\n';
+                }
+                last_csv = d;
+            }
+	    console.log(csv_string);
+        var blob = new Blob([ bom, csv_string ], { "type" : "text/csv" });
+        if (window.navigator.msSaveBlob) { 
+            window.navigator.msSaveBlob(blob, "test.csv"); 
+            window.navigator.msSaveOrOpenBlob(blob, "test.csv"); 
+            } else {
+                document.getElementById("download").href = window.URL.createObjectURL(blob);
+                }
+            }
+</script>
+
+<script type='text/javascript'>
+function RepresentationDownload() {
+        var log2 = [];
+        //BOMを付与する（Excelでの文字化け対策）
+        var bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        for(var count =1; count < 250; count++){
+			var data = parseInt(localStorage.getItem("bitrate"+count));
+            if(isNaN(data) === false ){
+                log2.push(data);
+                }
+                data = [];               
+            }
+            var content = log2;
+            let csv_string  = "";
+            for (let d of content) {
+                  csv_string += d;
+                  csv_string += '\r\n';
+                }
+	        return csv_string;
+        }
+</script>
+
+<script type='text/javascript'>
+    function array_equal(a, b) {
+  if (!Array.isArray(a))    return false;
+  if (!Array.isArray(b))    return false;
+  if (a.length != b.length) return false;
+  for (var i = 0, n = a.length; i < n; ++i) {
+    if (a[i] !== b[i]) return true;
+  }
+  return false;
+}
+</script>
+
+</body>
+</html>
